@@ -24,7 +24,7 @@
 
 (defun consult-ag--builder (input)
   "Build command line given INPUT."
-  (pcase-let* ((cmd (split-string-and-unquote "ag --vimgrep"))
+  (pcase-let* ((cmd (split-string-and-unquote "stdbuf -oL ag --vimgrep"))
                (`(,arg . ,opts) (consult--command-split input)))
     `(,@cmd ,@opts ,arg ".")))
 
@@ -66,13 +66,14 @@ FIND-FILE is the file open function, defaulting to `find-file`."
   (pcase-let* ((`(,prompt ,paths ,dir) (consult--directory-prompt "Consult ag: " target))
                (default-directory dir))
     (consult--read (consult--async-command #'consult-ag--builder
-                     (consult--async-map #'consult-ag--format))
+                     (consult--async-map #'consult-ag--format)
+                     :file-handler t)
                    :prompt prompt
                    :lookup #'consult--lookup-member
                    :state (consult-ag--grep-state)
                    :initial (consult--async-split-initial initial)
                    :require-match t
-                   :category 'file
+                   :category 'consult-grep
                    :sort nil)))
 
 (provide 'consult-ag)
