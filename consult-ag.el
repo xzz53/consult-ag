@@ -22,11 +22,15 @@
   (require 'subr-x))
 (require 'consult)
 
+
 (defun consult-ag--builder (input)
   "Build command line given INPUT."
   (pcase-let* ((cmd (split-string-and-unquote "stdbuf -oL ag --vimgrep"))
-               (`(,arg . ,opts) (consult--command-split input)))
-    `(,@cmd ,@opts ,arg ".")))
+               (`(,arg . ,opts)
+                (consult--command-split input))
+               (regex (consult--join-regexps (car (consult--default-regexp-compiler arg 'extended nil))
+                                             'extended)))
+    `(,@cmd ,@opts ,regex ".")))
 
 (defun consult-ag--format (line)
   "Parse LINE into candidate text."
