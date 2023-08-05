@@ -36,6 +36,7 @@
   "Parse LINE into candidate text."
   (when (string-match "^\\([^:]+\\):\\([0-9]+\\):\\([0-9]+\\):\\(.*\\)$" line)
     (let* ((filename (match-string 1 line))
+           (file-len (length filename))
            (row (match-string 2 line))
            (column (match-string 3 line))
            (body (match-string 4 line))
@@ -43,6 +44,7 @@
                               (propertize filename 'face 'consult-file)
                               (propertize row 'face 'consult-line-number)
                               (propertize column 'face 'consult-line-number) body)))
+      (add-text-properties 0 file-len `(face consult-file consult--prefix-group ,filename) candidate)
       (propertize candidate 'filename filename 'row row 'column column))))
 
 (defun consult-ag--grep-position (cand &optional find-file)
@@ -78,6 +80,7 @@ FIND-FILE is the file open function, defaulting to `find-file`."
                    :initial (consult--async-split-initial initial)
                    :require-match t
                    :category 'consult-grep
+                   :group #'consult--prefix-group
                    :sort nil)))
 
 (provide 'consult-ag)
