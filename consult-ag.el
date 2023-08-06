@@ -103,9 +103,11 @@ FIND-FILE is the file open function, defaulting to `find-file`."
                    :lookup #'consult--lookup-member
                    :state (consult-ag--grep-state)
                    :initial (consult--async-split-initial initial)
+                   :add-history (consult--async-split-thingatpt 'symbol)
                    :require-match t
                    :category 'consult-grep
                    :group #'consult--prefix-group
+                   :history '(:input consult--grep-history)
                    :sort nil)))
 
 (provide 'consult-ag)
