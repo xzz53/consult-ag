@@ -22,30 +22,54 @@
   (require 'subr-x))
 (require 'consult)
 
-
-(defun consult-ag--builder (input)
+(defun consult-ag--make-builder (paths)
   "Build command line given INPUT."
-  (pcase-let* ((cmd (split-string-and-unquote "stdbuf -oL ag --vimgrep"))
-               (`(,arg . ,opts)
-                (consult--command-split input))
-               (regex (consult--join-regexps (car (consult--default-regexp-compiler arg 'extended nil))
-                                             'extended)))
-    `(,@cmd ,@opts ,regex ".")))
+  (let ((cmd (split-string-and-unquote "stdbuf -oL ag --vimgrep")))
+    (lambda (input)
+     (pcase-let* ((`(,arg . ,opts)
+                   (consult--command-split input))
+                  (`(,re . ,hl)
+                   (funcall consult--regexp-compiler arg 'extended nil)))
+    (cons `(,@cmd ,@opts ,(consult--join-regexps re 'extended) ,@paths) hl)))))
 
-(defun consult-ag--format (line)
-  "Parse LINE into candidate text."
-  (when (string-match "^\\([^:]+\\):\\([0-9]+\\):\\([0-9]+\\):\\(.*\\)$" line)
-    (let* ((filename (match-string 1 line))
-           (file-len (length filename))
-           (row (match-string 2 line))
-           (column (match-string 3 line))
-           (body (match-string 4 line))
-           (candidate (format "%s:%s:%s:%s"
-                              (propertize filename 'face 'consult-file)
-                              (propertize row 'face 'consult-line-number)
-                              (propertize column 'face 'consult-line-number) body)))
-      (add-text-properties 0 file-len `(face consult-file consult--prefix-group ,filename) candidate)
-      (propertize candidate 'filename filename 'row row 'column column))))
+(defun consult-ag--format (async builder)
+  "Return ASYNC function highlighting ag match results.
+BUILDER is the command line builder function."
+  (let (highlight)
+    (lambda (action)
+      (cond
+       ((stringp action)
+        (setq highlight (cdr (funcall builder action)))
+        (funcall async action))
+       ((consp action)
+        (let ((file "") (file-len 0) result)
+          (save-match-data
+            (dolist (str action)
+              (when (string-match "^\\([^:]+\\):\\([0-9]+\\):\\([0-9]+\\):\\(.*\\)$" str))
+                ;; We share the file name across candidates to reduce
+                ;; the amount of allocated memory.
+                (unless (and (= file-len (- (match-end 1) (match-beginning 1)))
+                             (eq t (compare-strings
+                                    file 0 file-len
+                                    str (match-beginning 1) (match-end 1) nil)))
+                  (setq file (match-string 1 str)
+                        file-len (length file)))
+                (let* ((line (match-string 2 str))
+                       (column (match-string 3 str))
+                       (content (match-string 4 str))
+                       (line-len (length line))
+                       (sep ":"))
+                  (when (length> content consult-grep-max-columns)
+                    (setq content (substring content 0 consult-grep-max-columns)))
+                  (when highlight
+                    (funcall highlight content))
+                  (setq str (concat file sep line sep content))
+                  ;; Store file name in order to avoid allocations in `consult--prefix-group'
+                  (add-text-properties 0 file-len `(face consult-file consult--prefix-group ,file) str)
+                  (put-text-property (1+ file-len) (+ 1 file-len line-len) 'face 'consult-line-number str)
+                  (push (propertize str 'filename file 'row line 'column column) result))))
+          (funcall async (nreverse result))))
+       (t (funcall async action))))))
 
 (defun consult-ag--grep-position (cand &optional find-file)
   "Return the candidate position marker for CAND.
@@ -66,13 +90,14 @@ FIND-FILE is the file open function, defaulting to `find-file`."
       (funcall jump action (consult-ag--grep-position cand open)))))
 
 ;;;###autoload
-(defun consult-ag (&optional target initial)
+(defun consult-ag (&optional dir initial)
   "Consult ag for query in TARGET file(s) with INITIAL input."
   (interactive)
-  (pcase-let* ((`(,prompt ,paths ,dir) (consult--directory-prompt "Consult ag: " target))
-               (default-directory dir))
-    (consult--read (consult--async-command #'consult-ag--builder
-                     (consult--async-map #'consult-ag--format)
+  (pcase-let* ((`(,prompt ,paths ,dir) (consult--directory-prompt "Consult ag: " dir))
+               (default-directory dir)
+               (builder (consult-ag--make-builder paths)))
+    (consult--read (consult--async-command builder
+                     (consult-ag--format builder)
                      :file-handler t)
                    :prompt prompt
                    :lookup #'consult--lookup-member
